@@ -1,35 +1,34 @@
-import { Tabs } from 'expo-router';
-import React from 'react';
+﻿import { Tabs } from 'expo-router';
+import { Text } from 'react-native';
+import { Colors } from '../../src/theme/colors';
 
-import { HapticTab } from '@/components/haptic-tab';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+function TabIcon({ emoji }: { emoji: string }) {
+  return <Text style={{ fontSize: 22 }}>{emoji}</Text>;
+}
 
-export default function TabLayout() {
-  const colorScheme = useColorScheme();
-
+export default function TabsLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
-        headerShown: false,
-        tabBarButton: HapticTab,
-      }}>
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Home',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="explore"
-        options={{
-          title: 'Explore',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
-        }}
-      />
+        tabBarStyle: {
+          backgroundColor: Colors.surface,
+          borderTopColor: Colors.border,
+          height: 64,
+          paddingBottom: 8,
+          paddingTop: 4,
+        },
+        tabBarActiveTintColor: Colors.primary,
+        tabBarInactiveTintColor: Colors.textMuted,
+        headerStyle: { backgroundColor: Colors.background },
+        headerTintColor: Colors.textPrimary,
+        headerTitleStyle: { fontWeight: '700', fontSize: 18 },
+      }}
+    >
+      <Tabs.Screen name="index" options={{ title: 'Inicio', tabBarIcon: () => <TabIcon emoji="🏠" /> }} />
+      <Tabs.Screen name="routines" options={{ title: 'Rutinas', tabBarIcon: () => <TabIcon emoji="💪" /> }} />
+      <Tabs.Screen name="nutrition" options={{ title: 'Nutricion', tabBarIcon: () => <TabIcon emoji="🥗" /> }} />
+      <Tabs.Screen name="progress" options={{ title: 'Progreso', tabBarIcon: () => <TabIcon emoji="📈" /> }} />
+      <Tabs.Screen name="profile" options={{ title: 'Perfil', tabBarIcon: () => <TabIcon emoji="👤" /> }} />
     </Tabs>
   );
 }
