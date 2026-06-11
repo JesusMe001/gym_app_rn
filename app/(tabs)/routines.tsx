@@ -1,8 +1,10 @@
-﻿import { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Modal, FlatList } from 'react-native';
+﻿import { useState, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Modal, ActivityIndicator, FlatList } from 'react-native';
 import { Colors } from '../../src/theme/colors';
 import { useAuthStore } from '../../src/stores/authStore';
 import { getDb } from '../../src/db/connection';
+
+const API_KEY = 'QeONfKwX7gjcVT1Qz2pur6GGyzDpwGkNM4SJPfpq';
 
 interface Routine {
   id: number;
@@ -20,21 +22,40 @@ interface Exercise {
   weight: number;
 }
 
+interface ApiExercise {
+  name: string;
+  type: string;
+  muscle: string;
+  equipment: string;
+  difficulty: string;
+  instructions: string;
+}
+
+const MUSCLE_GROUPS = ['chest', 'back', 'shoulders', 'upper_arms', 'lower_arms', 'upper_legs', 'lower_legs', 'waist', 'cardio'];
+const MUSCLE_ES: Record<string, string> = {
+  chest: 'Pecho', back: 'Espalda', shoulders: 'Hombros',
+  upper_arms: 'Brazos', lower_arms: 'Antebrazos', upper_legs: 'Piernas',
+  lower_legs: 'Pantorrillas', waist: 'Core', cardio: 'Cardio',
+};
+
 export default function RoutinesScreen() {
   const user = useAuthStore((s) => s.user);
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [showExercises, setShowExercises] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
   const [selectedRoutine, setSelectedRoutine] = useState<Routine | null>(null);
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [newName, setNewName] = useState('');
   const [newDesc, setNewDesc] = useState('');
-  const [showAddExercise, setShowAddExercise] = useState(false);
-  const [exName, setExName] = useState('');
-  const [exMuscle, setExMuscle] = useState('');
   const [exSets, setExSets] = useState('3');
   const [exReps, setExReps] = useState('10');
   const [exWeight, setExWeight] = useState('0');
+  const [apiResults, setApiResults] = useState<ApiExercise[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [selectedMuscle, setSelectedMuscle] = useState('chest');
+  const [selectedApiEx, setSelectedApiEx] = useState<ApiExercise | null>(null);
+  const [showDetail, setShowDetail] = useState(false);
 
   const loadRoutines = useCallback(() => {
     if (!user) return;
@@ -48,7 +69,7 @@ export default function RoutinesScreen() {
     setRoutines(rows);
   }, [user]);
 
-  useEffect(() => { loadRoutines(); }, [loadRoutines]);
+  useState(() => { loadRoutines(); });
 
   const createRoutine = () => {
     if (!newName.trim()) { Alert.alert('Error', 'Escribe un nombre'); return; }
@@ -67,22 +88,41 @@ export default function RoutinesScreen() {
     setShowExercises(true);
   };
 
-  const addExercise = () => {
-    if (!exName.trim()) { Alert.alert('Error', 'Escribe el nombre del ejercicio'); return; }
+  const searchExercises = async (muscle: string) => {
+    setSelectedMuscle(muscle);
+    setSearching(true);
+    setApiResults([]);
+    try {
+      const res = await fetch(
+        `https://api.api-ninjas.com/v1/exercises?muscle=${muscle}&limit=10`,
+        { headers: { 'X-Api-Key': API_KEY } }
+      );
+      const data = await res.json();
+      setApiResults(Array.isArray(data) ? data : []);
+    } catch (e) {
+      Alert.alert('Error', 'No se pudo cargar ejercicios');
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const addApiExercise = () => {
+    if (!selectedApiEx) return;
     const db = getDb();
     db.runSync(
       'INSERT INTO exercises (routine_id, name, muscle_group, sets, reps, weight) VALUES (?, ?, ?, ?, ?, ?)',
-      [selectedRoutine!.id, exName.trim(), exMuscle.trim(), parseInt(exSets), parseInt(exReps), parseFloat(exWeight)]
+      [selectedRoutine!.id, selectedApiEx.name, MUSCLE_ES[selectedApiEx.muscle] || selectedApiEx.muscle, parseInt(exSets), parseInt(exReps), parseFloat(exWeight)]
     );
-    setExName(''); setExMuscle(''); setExSets('3'); setExReps('10'); setExWeight('0');
-    setShowAddExercise(false);
     const rows = db.getAllSync('SELECT * FROM exercises WHERE routine_id = ? ORDER BY order_index', [selectedRoutine!.id]) as Exercise[];
     setExercises(rows);
     loadRoutines();
+    setSelectedApiEx(null);
+    setExSets('3'); setExReps('10'); setExWeight('0');
+    setShowSearch(false);
   };
 
   const deleteRoutine = (id: number) => {
-    Alert.alert('Eliminar', 'Seguro que quieres eliminar esta rutina?', [
+    Alert.alert('Eliminar', 'Seguro?', [
       { text: 'Cancelar', style: 'cancel' },
       { text: 'Eliminar', style: 'destructive', onPress: () => {
         const db = getDb();
@@ -93,11 +133,22 @@ export default function RoutinesScreen() {
     ]);
   };
 
-  const muscleColors: Record<string, string> = {
-    pecho: Colors.muscle.pecho, espalda: Colors.muscle.espalda,
-    piernas: Colors.muscle.piernas, hombros: Colors.muscle.hombros,
-    brazos: Colors.muscle.brazos, core: Colors.muscle.core, cardio: Colors.muscle.cardio,
+  const deleteExercise = (id: number) => {
+    getDb().runSync('DELETE FROM exercises WHERE id = ?', [id]);
+    const rows = getDb().getAllSync('SELECT * FROM exercises WHERE routine_id = ? ORDER BY order_index', [selectedRoutine!.id]) as Exercise[];
+    setExercises(rows);
+    loadRoutines();
   };
+
+  const muscleColors: Record<string, string> = {
+    Pecho: Colors.muscle.pecho, Espalda: Colors.muscle.espalda,
+    Piernas: Colors.muscle.piernas, Hombros: Colors.muscle.hombros,
+    Brazos: Colors.muscle.brazos, Core: Colors.muscle.core,
+    Cardio: Colors.muscle.cardio,
+  };
+
+  const difficultyColor = (d: string) =>
+    d === 'beginner' ? Colors.secondary : d === 'intermediate' ? Colors.warning : Colors.error;
 
   return (
     <View style={styles.container}>
@@ -112,7 +163,7 @@ export default function RoutinesScreen() {
         <View style={styles.empty}>
           <Text style={styles.emptyEmoji}>💪</Text>
           <Text style={styles.emptyTitle}>Sin rutinas aun</Text>
-          <Text style={styles.emptySub}>Crea tu primera rutina de entrenamiento</Text>
+          <Text style={styles.emptySub}>Crea tu primera rutina</Text>
           <TouchableOpacity style={styles.emptyBtn} onPress={() => setShowCreate(true)}>
             <Text style={styles.emptyBtnText}>Crear rutina</Text>
           </TouchableOpacity>
@@ -142,10 +193,10 @@ export default function RoutinesScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
             <Text style={styles.modalTitle}>Nueva Rutina</Text>
-            <TextInput style={styles.input} placeholder="Nombre de la rutina" placeholderTextColor={Colors.textMuted} value={newName} onChangeText={setNewName} />
+            <TextInput style={styles.input} placeholder="Nombre" placeholderTextColor={Colors.textMuted} value={newName} onChangeText={setNewName} />
             <TextInput style={styles.input} placeholder="Descripcion (opcional)" placeholderTextColor={Colors.textMuted} value={newDesc} onChangeText={setNewDesc} />
             <TouchableOpacity style={styles.btnPrimary} onPress={createRoutine}>
-              <Text style={styles.btnPrimaryText}>Crear Rutina</Text>
+              <Text style={styles.btnPrimaryText}>Crear</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.btnCancel} onPress={() => setShowCreate(false)}>
               <Text style={styles.btnCancelText}>Cancelar</Text>
@@ -154,28 +205,31 @@ export default function RoutinesScreen() {
         </View>
       </Modal>
 
-      {/* Modal ver ejercicios */}
+      {/* Modal ver ejercicios de rutina */}
       <Modal visible={showExercises} transparent animationType="slide">
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalBox, { maxHeight: '85%' }]}>
+          <View style={[styles.modalBox, { maxHeight: '90%' }]}>
             <Text style={styles.modalTitle}>{selectedRoutine?.name}</Text>
-            <ScrollView style={{ maxHeight: 350 }}>
+            <ScrollView style={{ maxHeight: 320 }}>
               {exercises.length === 0 ? (
                 <Text style={styles.noExercises}>Sin ejercicios. Agrega el primero.</Text>
               ) : exercises.map((ex) => (
                 <View key={ex.id} style={styles.exerciseRow}>
-                  <View style={[styles.muscleBadge, { backgroundColor: muscleColors[ex.muscle_group?.toLowerCase()] || Colors.border }]}>
+                  <View style={[styles.muscleBadge, { backgroundColor: muscleColors[ex.muscle_group] || Colors.border }]}>
                     <Text style={styles.muscleBadgeText}>{ex.muscle_group || '?'}</Text>
                   </View>
                   <View style={styles.exerciseInfo}>
                     <Text style={styles.exerciseName}>{ex.name}</Text>
-                    <Text style={styles.exerciseMeta}>{ex.sets} series x {ex.reps} reps — {ex.weight}kg</Text>
+                    <Text style={styles.exerciseMeta}>{ex.sets}x{ex.reps} — {ex.weight}kg</Text>
                   </View>
+                  <TouchableOpacity onPress={() => deleteExercise(ex.id)}>
+                    <Text style={{ fontSize: 16 }}>🗑</Text>
+                  </TouchableOpacity>
                 </View>
               ))}
             </ScrollView>
-            <TouchableOpacity style={styles.btnPrimary} onPress={() => setShowAddExercise(true)}>
-              <Text style={styles.btnPrimaryText}>+ Agregar ejercicio</Text>
+            <TouchableOpacity style={styles.btnPrimary} onPress={() => { setShowSearch(true); searchExercises('chest'); }}>
+              <Text style={styles.btnPrimaryText}>+ Buscar ejercicio</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.btnCancel} onPress={() => setShowExercises(false)}>
               <Text style={styles.btnCancelText}>Cerrar</Text>
@@ -184,23 +238,80 @@ export default function RoutinesScreen() {
         </View>
       </Modal>
 
-      {/* Modal agregar ejercicio */}
-      <Modal visible={showAddExercise} transparent animationType="slide">
+      {/* Modal buscar ejercicios API */}
+      <Modal visible={showSearch} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalBox, { maxHeight: '92%' }]}>
+            <Text style={styles.modalTitle}>Buscar Ejercicio</Text>
+
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.muscleScroll}>
+              {MUSCLE_GROUPS.map(m => (
+                <TouchableOpacity key={m} style={[styles.muscleBtn, selectedMuscle === m && styles.muscleBtnActive]} onPress={() => searchExercises(m)}>
+                  <Text style={[styles.muscleBtnText, selectedMuscle === m && styles.muscleBtnTextActive]}>{MUSCLE_ES[m]}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            {searching ? (
+              <ActivityIndicator color={Colors.primary} size="large" style={{ marginVertical: 32 }} />
+            ) : (
+              <ScrollView style={{ maxHeight: 280 }}>
+                {apiResults.map((ex, i) => (
+                  <TouchableOpacity key={i} style={[styles.apiExRow, selectedApiEx?.name === ex.name && styles.apiExRowSelected]} onPress={() => setSelectedApiEx(ex)}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.apiExName}>{ex.name}</Text>
+                      <Text style={styles.apiExMeta}>{ex.equipment} · <Text style={{ color: difficultyColor(ex.difficulty) }}>{ex.difficulty}</Text></Text>
+                    </View>
+                    <TouchableOpacity onPress={() => { setSelectedApiEx(ex); setShowDetail(true); }}>
+                      <Text style={styles.infoBtn}>ℹ️</Text>
+                    </TouchableOpacity>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
+
+            {selectedApiEx && (
+              <View style={styles.addExForm}>
+                <Text style={styles.selectedExName}>{selectedApiEx.name}</Text>
+                <View style={styles.row}>
+                  <TextInput style={[styles.input, styles.inputSmall]} placeholder="Series" placeholderTextColor={Colors.textMuted} value={exSets} onChangeText={setExSets} keyboardType="numeric" />
+                  <TextInput style={[styles.input, styles.inputSmall]} placeholder="Reps" placeholderTextColor={Colors.textMuted} value={exReps} onChangeText={setExReps} keyboardType="numeric" />
+                  <TextInput style={[styles.input, styles.inputSmall]} placeholder="Kg" placeholderTextColor={Colors.textMuted} value={exWeight} onChangeText={setExWeight} keyboardType="numeric" />
+                </View>
+                <TouchableOpacity style={styles.btnPrimary} onPress={addApiExercise}>
+                  <Text style={styles.btnPrimaryText}>Agregar a rutina</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            <TouchableOpacity style={styles.btnCancel} onPress={() => { setShowSearch(false); setSelectedApiEx(null); setApiResults([]); }}>
+              <Text style={styles.btnCancelText}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal detalle ejercicio */}
+      <Modal visible={showDetail} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
-            <Text style={styles.modalTitle}>Agregar Ejercicio</Text>
-            <TextInput style={styles.input} placeholder="Nombre del ejercicio" placeholderTextColor={Colors.textMuted} value={exName} onChangeText={setExName} />
-            <TextInput style={styles.input} placeholder="Grupo muscular (pecho, espalda...)" placeholderTextColor={Colors.textMuted} value={exMuscle} onChangeText={setExMuscle} />
-            <View style={styles.row}>
-              <TextInput style={[styles.input, styles.inputSmall]} placeholder="Series" placeholderTextColor={Colors.textMuted} value={exSets} onChangeText={setExSets} keyboardType="numeric" />
-              <TextInput style={[styles.input, styles.inputSmall]} placeholder="Reps" placeholderTextColor={Colors.textMuted} value={exReps} onChangeText={setExReps} keyboardType="numeric" />
-              <TextInput style={[styles.input, styles.inputSmall]} placeholder="Kg" placeholderTextColor={Colors.textMuted} value={exWeight} onChangeText={setExWeight} keyboardType="numeric" />
+            <Text style={styles.modalTitle}>{selectedApiEx?.name}</Text>
+            <View style={styles.detailTags}>
+              <View style={[styles.tag, { backgroundColor: Colors.primary + '33' }]}>
+                <Text style={[styles.tagText, { color: Colors.primary }]}>{MUSCLE_ES[selectedApiEx?.muscle || ''] || selectedApiEx?.muscle}</Text>
+              </View>
+              <View style={[styles.tag, { backgroundColor: Colors.accent + '33' }]}>
+                <Text style={[styles.tagText, { color: Colors.accent }]}>{selectedApiEx?.equipment}</Text>
+              </View>
+              <View style={[styles.tag, { backgroundColor: difficultyColor(selectedApiEx?.difficulty || '') + '33' }]}>
+                <Text style={[styles.tagText, { color: difficultyColor(selectedApiEx?.difficulty || '') }]}>{selectedApiEx?.difficulty}</Text>
+              </View>
             </View>
-            <TouchableOpacity style={styles.btnPrimary} onPress={addExercise}>
-              <Text style={styles.btnPrimaryText}>Agregar</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.btnCancel} onPress={() => setShowAddExercise(false)}>
-              <Text style={styles.btnCancelText}>Cancelar</Text>
+            <ScrollView style={{ maxHeight: 200 }}>
+              <Text style={styles.instructions}>{selectedApiEx?.instructions}</Text>
+            </ScrollView>
+            <TouchableOpacity style={styles.btnPrimary} onPress={() => setShowDetail(false)}>
+              <Text style={styles.btnPrimaryText}>Cerrar</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -230,8 +341,8 @@ const styles = StyleSheet.create({
   deleteBtnText: { fontSize: 20 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
   modalBox: { backgroundColor: Colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24 },
-  modalTitle: { fontSize: 20, fontWeight: '800', color: Colors.textPrimary, marginBottom: 20, textAlign: 'center' },
-  input: { backgroundColor: Colors.card, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 13, color: Colors.textPrimary, fontSize: 15, marginBottom: 12, borderWidth: 1, borderColor: Colors.border },
+  modalTitle: { fontSize: 20, fontWeight: '800', color: Colors.textPrimary, marginBottom: 16, textAlign: 'center' },
+  input: { backgroundColor: Colors.card, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 13, color: Colors.textPrimary, fontSize: 15, marginBottom: 8, borderWidth: 1, borderColor: Colors.border },
   row: { flexDirection: 'row', gap: 8 },
   inputSmall: { flex: 1 },
   btnPrimary: { backgroundColor: Colors.primary, borderRadius: 12, paddingVertical: 15, alignItems: 'center', marginBottom: 10 },
@@ -239,10 +350,26 @@ const styles = StyleSheet.create({
   btnCancel: { borderRadius: 12, paddingVertical: 13, alignItems: 'center' },
   btnCancelText: { color: Colors.textSecondary, fontWeight: '600', fontSize: 15 },
   noExercises: { color: Colors.textMuted, textAlign: 'center', padding: 20 },
-  exerciseRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12, backgroundColor: Colors.card, borderRadius: 12, padding: 12 },
-  muscleBadge: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, marginRight: 12 },
+  exerciseRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, backgroundColor: Colors.card, borderRadius: 12, padding: 12 },
+  muscleBadge: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, marginRight: 10 },
   muscleBadgeText: { color: '#fff', fontSize: 11, fontWeight: '700' },
   exerciseInfo: { flex: 1 },
-  exerciseName: { fontSize: 15, fontWeight: '700', color: Colors.textPrimary },
-  exerciseMeta: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
+  exerciseName: { fontSize: 14, fontWeight: '700', color: Colors.textPrimary },
+  exerciseMeta: { fontSize: 12, color: Colors.textSecondary },
+  muscleScroll: { marginBottom: 12 },
+  muscleBtn: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: Colors.card, marginRight: 8, borderWidth: 1, borderColor: Colors.border },
+  muscleBtnActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  muscleBtnText: { color: Colors.textSecondary, fontWeight: '600', fontSize: 13 },
+  muscleBtnTextActive: { color: '#fff' },
+  apiExRow: { backgroundColor: Colors.card, borderRadius: 12, padding: 14, marginBottom: 8, flexDirection: 'row', alignItems: 'center' },
+  apiExRowSelected: { borderWidth: 2, borderColor: Colors.primary },
+  apiExName: { fontSize: 14, fontWeight: '700', color: Colors.textPrimary, textTransform: 'capitalize' },
+  apiExMeta: { fontSize: 12, color: Colors.textSecondary, marginTop: 2, textTransform: 'capitalize' },
+  infoBtn: { fontSize: 20, marginLeft: 8 },
+  addExForm: { backgroundColor: Colors.card, borderRadius: 12, padding: 14, marginVertical: 10 },
+  selectedExName: { fontSize: 14, fontWeight: '700', color: Colors.primary, marginBottom: 10, textTransform: 'capitalize' },
+  detailTags: { flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginBottom: 14 },
+  tag: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
+  tagText: { fontSize: 13, fontWeight: '700', textTransform: 'capitalize' },
+  instructions: { fontSize: 14, color: Colors.textSecondary, lineHeight: 22 },
 });
