@@ -1,8 +1,10 @@
 ﻿import { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, Alert, Modal, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Modal, ActivityIndicator } from 'react-native';
 import { Colors } from '../../src/theme/colors';
 import { useAuthStore } from '../../src/stores/authStore';
 import { getDb } from '../../src/db/connection';
+
+const CALORIE_NINJAS_KEY = '+mtqaLlFwjaJ6PoF7EVu8g==KIEjeuZmeb0R4Qf6';
 
 interface FoodLog {
   id: number;
@@ -15,6 +17,15 @@ interface FoodLog {
   meal_type: string;
 }
 
+interface FoodResult {
+  name: string;
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  serving_size_g: number;
+}
+
 const MEAL_TYPES = ['desayuno', 'almuerzo', 'cena', 'snack'];
 
 export default function NutritionScreen() {
@@ -22,12 +33,17 @@ export default function NutritionScreen() {
   const [logs, setLogs] = useState<FoodLog[]>([]);
   const [showAdd, setShowAdd] = useState(false);
   const [mealType, setMealType] = useState('almuerzo');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<FoodResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [selectedFood, setSelectedFood] = useState<FoodResult | null>(null);
+  const [grams, setGrams] = useState('100');
+  const [manualMode, setManualMode] = useState(false);
   const [foodName, setFoodName] = useState('');
   const [calories, setCalories] = useState('');
   const [protein, setProtein] = useState('');
   const [carbs, setCarbs] = useState('');
   const [fat, setFat] = useState('');
-  const [grams, setGrams] = useState('100');
 
   const today = new Date().toISOString().split('T')[0];
 
@@ -50,46 +66,81 @@ export default function NutritionScreen() {
     fat: acc.fat + (log.fat || 0),
   }), { calories: 0, protein: 0, carbs: 0, fat: 0 });
 
-  const addFood = () => {
-    if (!foodName.trim() || !calories.trim()) {
-      Alert.alert('Error', 'Nombre y calorias son obligatorios');
-      return;
+  const searchFood = async () => {
+    if (!searchQuery.trim()) return;
+    setSearching(true);
+    setSearchResults([]);
+    try {
+      const res = await fetch(
+        `https://api.calorieninjas.com/v1/nutrition?query=${encodeURIComponent(searchQuery)}`,
+        { headers: { 'X-Api-Key': CALORIE_NINJAS_KEY } }
+      );
+      const data = await res.json();
+      const results: FoodResult[] = (data.items || []).map((item: any) => ({
+        name: item.name,
+        calories: Math.round(item.calories),
+        protein: Math.round(item.protein_g * 10) / 10,
+        carbs: Math.round(item.carbohydrates_total_g * 10) / 10,
+        fat: Math.round(item.fat_total_g * 10) / 10,
+        serving_size_g: item.serving_size_g || 100,
+      }));
+      setSearchResults(results);
+      if (results.length === 0) Alert.alert('Sin resultados', 'Prueba con otro nombre o usa modo manual');
+    } catch (e) {
+      Alert.alert('Error', 'No se pudo conectar. Usa modo manual.');
+    } finally {
+      setSearching(false);
     }
-    const db = getDb();
-    db.runSync(
-      `INSERT INTO nutrition_logs (user_id, food_name, calories, protein, carbs, fat, grams, meal_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [user!.id, foodName.trim(), parseFloat(calories), parseFloat(protein||'0'), parseFloat(carbs||'0'), parseFloat(fat||'0'), parseFloat(grams||'100'), mealType]
-    );
-    setFoodName(''); setCalories(''); setProtein(''); setCarbs(''); setFat(''); setGrams('100');
-    setShowAdd(false);
+  };
+
+  const selectFood = (food: FoodResult) => {
+    setSelectedFood(food);
+    setGrams(food.serving_size_g.toString());
+    setSearchResults([]);
+  };
+
+  const calcMacro = (base: number, baseG: number, targetG: number) =>
+    Math.round((base / baseG) * targetG * 10) / 10;
+
+  const addFood = () => {
+    if (manualMode) {
+      if (!foodName.trim() || !calories.trim()) { Alert.alert('Error', 'Nombre y calorias son obligatorios'); return; }
+      getDb().runSync(
+        `INSERT INTO nutrition_logs (user_id, food_name, calories, protein, carbs, fat, grams, meal_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [user!.id, foodName.trim(), parseFloat(calories), parseFloat(protein||'0'), parseFloat(carbs||'0'), parseFloat(fat||'0'), parseFloat(grams||'100'), mealType]
+      );
+    } else {
+      if (!selectedFood) { Alert.alert('Error', 'Selecciona un alimento'); return; }
+      const g = parseFloat(grams) || selectedFood.serving_size_g;
+      const base = selectedFood.serving_size_g;
+      getDb().runSync(
+        `INSERT INTO nutrition_logs (user_id, food_name, calories, protein, carbs, fat, grams, meal_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [user!.id, selectedFood.name, calcMacro(selectedFood.calories, base, g), calcMacro(selectedFood.protein, base, g), calcMacro(selectedFood.carbs, base, g), calcMacro(selectedFood.fat, base, g), g, mealType]
+      );
+    }
+    setFoodName(''); setCalories(''); setProtein(''); setCarbs(''); setFat('');
+    setGrams('100'); setSelectedFood(null); setSearchQuery('');
+    setManualMode(false); setShowAdd(false);
     loadLogs();
   };
 
   const deleteLog = (id: number) => {
     Alert.alert('Eliminar', 'Eliminar este alimento?', [
       { text: 'Cancelar', style: 'cancel' },
-      { text: 'Eliminar', style: 'destructive', onPress: () => {
-        getDb().runSync('DELETE FROM nutrition_logs WHERE id = ?', [id]);
-        loadLogs();
-      }}
+      { text: 'Eliminar', style: 'destructive', onPress: () => { getDb().runSync('DELETE FROM nutrition_logs WHERE id = ?', [id]); loadLogs(); }}
     ]);
   };
 
   const mealColors: Record<string, string> = {
-    desayuno: Colors.warning,
-    almuerzo: Colors.primary,
-    cena: Colors.accent,
-    snack: Colors.secondary,
+    desayuno: Colors.warning, almuerzo: Colors.primary, cena: Colors.accent, snack: Colors.secondary,
   };
 
   const byMeal = MEAL_TYPES.map(type => ({
-    type,
-    items: logs.filter(l => l.meal_type === type),
+    type, items: logs.filter(l => l.meal_type === type),
   })).filter(m => m.items.length > 0);
 
   return (
     <View style={styles.container}>
-      {/* Resumen del dia */}
       <View style={styles.summary}>
         <Text style={styles.summaryTitle}>Hoy — {today}</Text>
         <View style={styles.macrosRow}>
@@ -144,10 +195,9 @@ export default function NutritionScreen() {
         </ScrollView>
       )}
 
-      {/* Modal agregar */}
       <Modal visible={showAdd} transparent animationType="slide">
         <View style={styles.modalOverlay}>
-          <ScrollView>
+          <ScrollView keyboardShouldPersistTaps="handled">
             <View style={styles.modalBox}>
               <Text style={styles.modalTitle}>Agregar Alimento</Text>
 
@@ -160,26 +210,69 @@ export default function NutritionScreen() {
                 ))}
               </View>
 
-              <Text style={styles.fieldLabel}>Alimento</Text>
-              <TextInput style={styles.input} placeholder="Ej: Pollo a la plancha" placeholderTextColor={Colors.textMuted} value={foodName} onChangeText={setFoodName} />
-
-              <Text style={styles.fieldLabel}>Calorias *</Text>
-              <TextInput style={styles.input} placeholder="Kcal" placeholderTextColor={Colors.textMuted} value={calories} onChangeText={setCalories} keyboardType="numeric" />
-
-              <Text style={styles.fieldLabel}>Gramos</Text>
-              <TextInput style={styles.input} placeholder="100" placeholderTextColor={Colors.textMuted} value={grams} onChangeText={setGrams} keyboardType="numeric" />
-
-              <Text style={styles.fieldLabel}>Macros (opcional)</Text>
-              <View style={styles.row}>
-                <TextInput style={[styles.input, styles.inputSmall]} placeholder="Proteina g" placeholderTextColor={Colors.textMuted} value={protein} onChangeText={setProtein} keyboardType="numeric" />
-                <TextInput style={[styles.input, styles.inputSmall]} placeholder="Carbos g" placeholderTextColor={Colors.textMuted} value={carbs} onChangeText={setCarbs} keyboardType="numeric" />
-                <TextInput style={[styles.input, styles.inputSmall]} placeholder="Grasa g" placeholderTextColor={Colors.textMuted} value={fat} onChangeText={setFat} keyboardType="numeric" />
+              <View style={styles.modeRow}>
+                <TouchableOpacity style={[styles.modeBtn, !manualMode && styles.modeBtnActive]} onPress={() => setManualMode(false)}>
+                  <Text style={[styles.modeBtnText, !manualMode && styles.modeBtnTextActive]}>🔍 Buscar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.modeBtn, manualMode && styles.modeBtnActive]} onPress={() => setManualMode(true)}>
+                  <Text style={[styles.modeBtnText, manualMode && styles.modeBtnTextActive]}>✏️ Manual</Text>
+                </TouchableOpacity>
               </View>
+
+              {!manualMode ? (
+                <View>
+                  <View style={styles.searchRow}>
+                    <TextInput
+                      style={[styles.input, { flex: 1 }]}
+                      placeholder="Ej: 100g pollo a la plancha"
+                      placeholderTextColor={Colors.textMuted}
+                      value={searchQuery}
+                      onChangeText={setSearchQuery}
+                      onSubmitEditing={searchFood}
+                      returnKeyType="search"
+                    />
+                    <TouchableOpacity style={styles.searchBtn} onPress={searchFood}>
+                      {searching ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.searchBtnText}>Buscar</Text>}
+                    </TouchableOpacity>
+                  </View>
+
+                  {searchResults.length > 0 && (
+                    <View style={styles.resultsList}>
+                      {searchResults.map((r, i) => (
+                        <TouchableOpacity key={i} style={[styles.resultItem, selectedFood?.name === r.name && styles.resultItemSelected]} onPress={() => selectFood(r)}>
+                          <Text style={styles.resultName}>{r.name}</Text>
+                          <Text style={styles.resultMacros}>{r.calories}kcal · P:{r.protein}g C:{r.carbs}g G:{r.fat}g</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+
+                  {selectedFood && (
+                    <View style={styles.selectedFood}>
+                      <Text style={styles.selectedName}>{selectedFood.name}</Text>
+                      <Text style={styles.selectedMacros}>{selectedFood.calories}kcal · P:{selectedFood.protein}g C:{selectedFood.carbs}g G:{selectedFood.fat}g</Text>
+                      <Text style={styles.fieldLabel}>Gramos</Text>
+                      <TextInput style={styles.input} placeholder="100" placeholderTextColor={Colors.textMuted} value={grams} onChangeText={setGrams} keyboardType="numeric" />
+                    </View>
+                  )}
+                </View>
+              ) : (
+                <View>
+                  <TextInput style={styles.input} placeholder="Nombre del alimento" placeholderTextColor={Colors.textMuted} value={foodName} onChangeText={setFoodName} />
+                  <TextInput style={styles.input} placeholder="Calorias (kcal) *" placeholderTextColor={Colors.textMuted} value={calories} onChangeText={setCalories} keyboardType="numeric" />
+                  <TextInput style={styles.input} placeholder="Gramos" placeholderTextColor={Colors.textMuted} value={grams} onChangeText={setGrams} keyboardType="numeric" />
+                  <View style={styles.row}>
+                    <TextInput style={[styles.input, styles.inputSmall]} placeholder="Proteina g" placeholderTextColor={Colors.textMuted} value={protein} onChangeText={setProtein} keyboardType="numeric" />
+                    <TextInput style={[styles.input, styles.inputSmall]} placeholder="Carbos g" placeholderTextColor={Colors.textMuted} value={carbs} onChangeText={setCarbs} keyboardType="numeric" />
+                    <TextInput style={[styles.input, styles.inputSmall]} placeholder="Grasa g" placeholderTextColor={Colors.textMuted} value={fat} onChangeText={setFat} keyboardType="numeric" />
+                  </View>
+                </View>
+              )}
 
               <TouchableOpacity style={styles.btnPrimary} onPress={addFood}>
                 <Text style={styles.btnPrimaryText}>Agregar</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.btnCancel} onPress={() => setShowAdd(false)}>
+              <TouchableOpacity style={styles.btnCancel} onPress={() => { setShowAdd(false); setSelectedFood(null); setSearchQuery(''); setSearchResults([]); setManualMode(false); }}>
                 <Text style={styles.btnCancelText}>Cancelar</Text>
               </TouchableOpacity>
             </View>
@@ -214,14 +307,30 @@ const styles = StyleSheet.create({
   foodMeta: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
   foodKcal: { fontSize: 15, fontWeight: '700', color: Colors.primary },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
-  modalBox: { backgroundColor: Colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24 },
+  modalBox: { backgroundColor: Colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 },
   modalTitle: { fontSize: 20, fontWeight: '800', color: Colors.textPrimary, marginBottom: 16, textAlign: 'center' },
-  fieldLabel: { fontSize: 12, color: Colors.textSecondary, fontWeight: '600', textTransform: 'uppercase', marginBottom: 6, marginTop: 12 },
-  mealTypeRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  fieldLabel: { fontSize: 12, color: Colors.textSecondary, fontWeight: '600', textTransform: 'uppercase', marginBottom: 6, marginTop: 8 },
+  mealTypeRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginBottom: 12 },
   mealTypeBtn: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border },
   mealTypeBtnActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
   mealTypeBtnText: { color: Colors.textSecondary, fontWeight: '600', fontSize: 13 },
   mealTypeBtnTextActive: { color: '#fff' },
+  modeRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
+  modeBtn: { flex: 1, paddingVertical: 10, borderRadius: 10, backgroundColor: Colors.card, alignItems: 'center', borderWidth: 1, borderColor: Colors.border },
+  modeBtnActive: { backgroundColor: Colors.accent + '33', borderColor: Colors.accent },
+  modeBtnText: { color: Colors.textSecondary, fontWeight: '600' },
+  modeBtnTextActive: { color: Colors.accent },
+  searchRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
+  searchBtn: { backgroundColor: Colors.accent, borderRadius: 12, paddingHorizontal: 16, justifyContent: 'center' },
+  searchBtnText: { color: '#fff', fontWeight: '700' },
+  resultsList: { backgroundColor: Colors.card, borderRadius: 12, marginBottom: 12, overflow: 'hidden' },
+  resultItem: { padding: 14, borderBottomWidth: 1, borderBottomColor: Colors.border },
+  resultItemSelected: { backgroundColor: Colors.secondary + '22' },
+  resultName: { fontSize: 14, fontWeight: '600', color: Colors.textPrimary, textTransform: 'capitalize' },
+  resultMacros: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
+  selectedFood: { backgroundColor: Colors.card, borderRadius: 12, padding: 14, marginBottom: 12, borderLeftWidth: 3, borderLeftColor: Colors.secondary },
+  selectedName: { fontSize: 14, fontWeight: '700', color: Colors.textPrimary, marginBottom: 4, textTransform: 'capitalize' },
+  selectedMacros: { fontSize: 12, color: Colors.textSecondary },
   input: { backgroundColor: Colors.card, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 13, color: Colors.textPrimary, fontSize: 15, marginBottom: 8, borderWidth: 1, borderColor: Colors.border },
   row: { flexDirection: 'row', gap: 8 },
   inputSmall: { flex: 1 },
