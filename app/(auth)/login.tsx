@@ -1,6 +1,8 @@
 ﻿import { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, Alert } from 'react-native';
 import { Colors } from '../../src/theme/colors';
+import { useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { getDb } from '../../src/db/connection';
 import { useAuthStore } from '../../src/stores/authStore';
 
@@ -9,6 +11,8 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const login = useAuthStore((s) => s.login);
+  const router = useRouter();
+  const router = useRouter();
 
   const handleLogin = () => {
     if (!username.trim() || !password.trim()) {
@@ -51,6 +55,14 @@ export default function LoginScreen() {
             {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Entrar</Text>}
           </TouchableOpacity>
         </View>
+        <TouchableOpacity onPress={() => router.push('/(auth)/register')} style={styles.registerLink}>
+          <Text style={styles.registerLinkText}>No tienes cuenta? Registrate gratis →</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={() => router.push('/(auth)/register')} style={styles.registerLink}>
+          <Text style={styles.registerLinkText}>No tienes cuenta? Registrate gratis →</Text>
+        </TouchableOpacity>
+
         <View style={styles.demo}>
           <Text style={styles.demoTitle}>Usuarios de prueba</Text>
           <Text style={styles.demoText}>demo / demo123</Text>
@@ -78,4 +90,8 @@ const styles = StyleSheet.create({
   demo: { alignItems: 'center', padding: 16, backgroundColor: Colors.surface, borderRadius: 12, borderWidth: 1, borderColor: Colors.border },
   demoTitle: { color: Colors.textSecondary, fontSize: 12, fontWeight: '600', marginBottom: 6, textTransform: 'uppercase' },
   demoText: { color: Colors.textMuted, fontSize: 13, marginBottom: 2 },
+  registerLink: { alignItems: 'center', marginBottom: 16 },
+  registerLinkText: { color: Colors.primary, fontSize: 14, fontWeight: '600' },
+  registerLink: { alignItems: 'center', marginBottom: 16 },
+  registerLinkText: { color: Colors.primary, fontSize: 14, fontWeight: '600' },
 });
