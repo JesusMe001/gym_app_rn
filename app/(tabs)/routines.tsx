@@ -1,6 +1,7 @@
 ﻿import { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Modal, ActivityIndicator, FlatList } from 'react-native';
 import { Colors } from '../../src/theme/colors';
+import { useRouter } from 'expo-router';
 import { useAuthStore } from '../../src/stores/authStore';
 import { getDb } from '../../src/db/connection';
 
@@ -40,6 +41,7 @@ const MUSCLE_ES: Record<string, string> = {
 
 export default function RoutinesScreen() {
   const user = useAuthStore((s) => s.user);
+  const router = useRouter();
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [showExercises, setShowExercises] = useState(false);
@@ -180,9 +182,14 @@ export default function RoutinesScreen() {
                 {item.description ? <Text style={styles.routineDesc}>{item.description}</Text> : null}
                 <Text style={styles.routineMeta}>{item.exercise_count} ejercicios</Text>
               </View>
-              <TouchableOpacity onPress={() => deleteRoutine(item.id)} style={styles.deleteBtn}>
-                <Text style={styles.deleteBtnText}>🗑</Text>
-              </TouchableOpacity>
+              <View style={styles.routineActions}>
+                <TouchableOpacity style={styles.startBtn} onPress={() => router.push({ pathname: '/workout', params: { routineId: item.id.toString(), routineName: item.name } })}>
+                  <Text style={styles.startBtnText}>▶ Iniciar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => deleteRoutine(item.id)} style={styles.deleteBtn}>
+                  <Text style={styles.deleteBtnText}>🗑</Text>
+                </TouchableOpacity>
+              </View>
             </TouchableOpacity>
           )}
         />
@@ -338,6 +345,9 @@ const styles = StyleSheet.create({
   routineDesc: { fontSize: 13, color: Colors.textSecondary, marginBottom: 4 },
   routineMeta: { fontSize: 12, color: Colors.primary, fontWeight: '600' },
   deleteBtn: { padding: 8 },
+  routineActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  startBtn: { backgroundColor: Colors.primary, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
+  startBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
   deleteBtnText: { fontSize: 20 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
   modalBox: { backgroundColor: Colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24 },

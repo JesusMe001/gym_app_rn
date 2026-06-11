@@ -1,5 +1,5 @@
 ﻿import { Tabs } from 'expo-router';
-import { Text } from 'react-native';
+import { Text, View } from 'react-native';
 import { Colors } from '../../src/theme/colors';
 
 function TabIcon({ emoji }: { emoji: string }) {
@@ -25,14 +25,14 @@ export default function TabsLayout() {
       }}
     >
       <Tabs.Screen name="index" options={{ title: 'Inicio', tabBarIcon: () => <TabIcon emoji="🏠" /> }} />
-      <Tabs.Screen name="notifications" options={{ title: 'Avisos', tabBarIcon: () => <TabIcon emoji="🔔" /> }} />
-      <Tabs.Screen name="planner" options={{ title: 'Planner', tabBarIcon: () => <TabIcon emoji="📅" /> }} />
       <Tabs.Screen name="routines" options={{ title: 'Rutinas', tabBarIcon: () => <TabIcon emoji="💪" /> }} />
       <Tabs.Screen name="nutrition" options={{ title: 'Nutricion', tabBarIcon: () => <TabIcon emoji="🥗" /> }} />
       <Tabs.Screen name="progress" options={{ title: 'Progreso', tabBarIcon: () => <TabIcon emoji="📈" /> }} />
-      <Tabs.Screen name="coach" options={{ title: 'AI Coach', tabBarIcon: () => <TabIcon emoji="🤖" /> }} />
-      <Tabs.Screen name="trainer" options={{ title: 'B2B', tabBarIcon: () => <TabIcon emoji="👥" /> }} />
       <Tabs.Screen name="profile" options={{ title: 'Perfil', tabBarIcon: () => <TabIcon emoji="👤" /> }} />
+      <Tabs.Screen name="coach" options={{ href: null }} />
+      <Tabs.Screen name="planner" options={{ href: null }} />
+      <Tabs.Screen name="trainer" options={{ href: null }} />
+      <Tabs.Screen name="notifications" options={{ href: null }} />
     </Tabs>
   );
 }

@@ -2,6 +2,7 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, TextInput } from 'react-native';
 import { Colors } from '../../src/theme/colors';
 import { useAuthStore } from '../../src/stores/authStore';
+import { useRouter } from 'expo-router';
 import { getDb } from '../../src/db/connection';
 
 interface Stats {
@@ -18,6 +19,7 @@ const GENDERS = ['Masculino', 'Femenino', 'Otro'];
 
 export default function ProfileScreen() {
   const { user, logout, updateProfile } = useAuthStore();
+  const router = useRouter();
   const [stats, setStats] = useState<Stats>({ totalRoutines: 0, totalExercises: 0, totalNutritionLogs: 0, totalBodyStats: 0, lastWeight: null });
   const [showEdit, setShowEdit] = useState(false);
   const [gender, setGender] = useState(user?.gender || '');
