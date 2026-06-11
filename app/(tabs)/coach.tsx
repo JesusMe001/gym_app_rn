@@ -4,7 +4,7 @@ import { Colors } from '../../src/theme/colors';
 import { useAuthStore } from '../../src/stores/authStore';
 import { getDb } from '../../src/db/connection';
 
-const GROQ_API_KEY = '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';
+const GROQ_API_KEY = process.env.EXPO_PUBLIC_GROQ_API_KEY || '';
 
 interface Message {
   role: 'user' | 'assistant';
