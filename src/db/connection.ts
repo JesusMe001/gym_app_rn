@@ -22,6 +22,13 @@ export async function initDb(): Promise<void> {
       password TEXT NOT NULL,
       name TEXT NOT NULL,
       role TEXT DEFAULT 'user',
+      gender TEXT DEFAULT '',
+      age INTEGER DEFAULT 0,
+      height REAL DEFAULT 0,
+      current_weight REAL DEFAULT 0,
+      goal_weight REAL DEFAULT 0,
+      goal TEXT DEFAULT '',
+      activity_level TEXT DEFAULT '',
       created_at TEXT DEFAULT (datetime('now'))
     );
 
@@ -92,6 +99,19 @@ export async function initDb(): Promise<void> {
       FOREIGN KEY (user_id) REFERENCES users(id)
     );
   `);
+
+  const migrations = [
+    `ALTER TABLE users ADD COLUMN gender TEXT DEFAULT ''`,
+    `ALTER TABLE users ADD COLUMN age INTEGER DEFAULT 0`,
+    `ALTER TABLE users ADD COLUMN height REAL DEFAULT 0`,
+    `ALTER TABLE users ADD COLUMN current_weight REAL DEFAULT 0`,
+    `ALTER TABLE users ADD COLUMN goal_weight REAL DEFAULT 0`,
+    `ALTER TABLE users ADD COLUMN goal TEXT DEFAULT ''`,
+    `ALTER TABLE users ADD COLUMN activity_level TEXT DEFAULT ''`,
+  ];
+  for (const sql of migrations) {
+    try { database.execSync(sql); } catch (e) {}
+  }
 
   const existing = database.getFirstSync(
     'SELECT id FROM users WHERE username = ?',
