@@ -89,6 +89,26 @@ export async function initDb(): Promise<void> {
       FOREIGN KEY (routine_id) REFERENCES routines(id)
     );
 
+    CREATE TABLE IF NOT EXISTS invitations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      trainer_id INTEGER NOT NULL,
+      client_id INTEGER NOT NULL,
+      status TEXT DEFAULT 'pending',
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (trainer_id) REFERENCES users(id),
+      FOREIGN KEY (client_id) REFERENCES users(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS trainer_clients (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      trainer_id INTEGER NOT NULL,
+      client_id INTEGER NOT NULL,
+      status TEXT DEFAULT 'active',
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (trainer_id) REFERENCES users(id),
+      FOREIGN KEY (client_id) REFERENCES users(id)
+    );
+
     CREATE TABLE IF NOT EXISTS body_stats (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL,
