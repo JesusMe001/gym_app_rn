@@ -33,6 +33,7 @@ export default function TabsLayout() {
       <Tabs.Screen name="planner" options={{ href: null }} />
       <Tabs.Screen name="trainer" options={{ href: null }} />
       <Tabs.Screen name="notifications" options={{ href: null }} />
+      <Tabs.Screen name="workout" options={{ href: null }} />
     </Tabs>
   );
 }
